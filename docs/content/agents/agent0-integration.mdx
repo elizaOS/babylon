@@ -187,10 +187,8 @@ Use Babylon's built-in Agent0Client:
 import { Agent0Client } from '@/agents/agent0/Agent0Client'
 
 // Initialize
-// IMPORTANT: Agent0 operations happen on Ethereum Sepolia (not Base Sepolia)
-// Priority: AGENT0_RPC_URL > SEPOLIA_RPC_URL
 const agent0 = new Agent0Client({
-  network: 'sepolia',  // Ethereum Sepolia (agent0 network)
+  network: 'sepolia',
   rpcUrl: process.env.AGENT0_RPC_URL || process.env.SEPOLIA_RPC_URL,
   privateKey: process.env.AGENT0_PRIVATE_KEY,
   ipfsProvider: 'pinata',
@@ -568,10 +566,8 @@ while (true) {
 # Agent0 Configuration (Ethereum Sepolia - Discovery Layer)
 AGENT0_ENABLED=true
 AGENT0_NETWORK=sepolia
-# Primary: AGENT0_RPC_URL (recommended)
 AGENT0_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
-# OR (legacy fallback)
-SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com  # Fallback
 
 AGENT0_PRIVATE_KEY=0x...  # Needs ETH on Ethereum Sepolia
 AGENT0_SUBGRAPH_URL=https://api.studio.thegraph.com/query/.../agent0/...
