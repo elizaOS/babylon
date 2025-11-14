@@ -256,8 +256,11 @@ async function reconcilePrivyIdentity(privyUserId: string, identityToken?: strin
   for (const walletAddress of walletAddresses) {
     const existing = await prisma.user.findFirst({
       where: {
-        walletAddress,
         isActor: false,
+        walletAddress: {
+          equals: walletAddress,
+          mode: 'insensitive',
+        },
       },
       select: {
         id: true,
