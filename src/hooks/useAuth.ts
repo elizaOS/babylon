@@ -7,6 +7,7 @@ import {
   type User as PrivyUser,
   usePrivy,
   useWallets,
+  useIdentityToken,
 } from '@privy-io/react-auth';
 import { useSmartWallets } from '@privy-io/react-auth/smart-wallets';
 
@@ -49,6 +50,7 @@ export function useAuth(): UseAuthReturn {
     logout,
     getAccessToken,
   } = usePrivy();
+  const { identityToken } = useIdentityToken();
   const { wallets } = useWallets();
   const { client } = useSmartWallets();
   const {
@@ -81,6 +83,23 @@ export function useAuth(): UseAuthReturn {
 
   const smartWalletAddress = client?.account?.address;
   const smartWalletReady = Boolean(smartWalletAddress);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const win = window as typeof window & {
+      __privyIdentityToken?: string | null;
+      __privyGetIdentityToken?: () => Promise<string | null>;
+    };
+
+    win.__privyIdentityToken = identityToken ?? null;
+
+    if (identityToken) {
+      win.__privyGetIdentityToken = async () => identityToken;
+    } else {
+      win.__privyGetIdentityToken = undefined;
+    }
+  }, [identityToken]);
 
   const persistAccessToken = async (): Promise<string | null> => {
     if (!authenticated) {
@@ -135,7 +154,9 @@ export function useAuth(): UseAuthReturn {
           return;
         }
 
-        const response = await apiFetch('/api/users/me');
+        const response = await apiFetch('/api/users/me', {
+          includeIdentityToken: true,
+        });
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {

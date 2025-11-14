@@ -8,6 +8,8 @@ import { verifyAgentSession } from '@/lib/auth/agent-auth';
 import { prisma } from '@/lib/database-service';
 import { logger } from '@/lib/logger';
 import { PrivyClient } from '@privy-io/server-auth';
+import type { User as PrivyUser } from '@privy-io/server-auth';
+import { Prisma } from '@prisma/client';
 import type { NextRequest } from 'next/server';
 import { NextResponse } from 'next/server';
 
@@ -77,6 +79,7 @@ export interface AuthenticatedUser {
 export async function authenticate(request: NextRequest): Promise<AuthenticatedUser> {
   // Try Authorization header first
   const authHeader = request.headers.get('authorization');
+  const identityTokenHeader = request.headers.get('x-privy-identity-token');
   let token: string | undefined;
 
   if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -114,10 +117,14 @@ export async function authenticate(request: NextRequest): Promise<AuthenticatedU
     let walletAddress: string | undefined;
 
     try {
-      const dbUser = await prisma.user.findUnique({
+      let dbUser = await prisma.user.findUnique({
         where: { privyId: claims.userId },
         select: { id: true, walletAddress: true },
       });
+
+      if (!dbUser) {
+        dbUser = await reconcilePrivyIdentity(claims.userId, identityTokenHeader);
+      }
 
       if (dbUser) {
         dbUserId = dbUser.id;
@@ -188,6 +195,184 @@ export async function authenticate(request: NextRequest): Promise<AuthenticatedU
     authError.code = 'AUTH_FAILED';
     throw authError;
   }
+}
+
+type MinimalDbUser = { id: string; walletAddress: string | null };
+
+async function reconcilePrivyIdentity(privyUserId: string, identityToken?: string | null): Promise<MinimalDbUser | null> {
+  const privy = getPrivyClient();
+  let privyProfile: PrivyUser | null = null;
+
+  if (identityToken) {
+    try {
+      privyProfile = await privy.getUser({ idToken: identityToken });
+    } catch (error) {
+      logger.warn(
+        'Failed to decode provided identity token while attempting identity reconciliation',
+        { privyUserId, error },
+        'authenticate'
+      );
+    }
+  }
+
+  if (!privyProfile) {
+    try {
+      privyProfile = await privy.getUser(privyUserId);
+    } catch (error) {
+      logger.warn(
+        'Failed to fetch Privy profile while attempting identity reconciliation',
+        { privyUserId, error },
+        'authenticate'
+      );
+      return null;
+    }
+  }
+
+  if (!privyProfile) {
+    return null;
+  }
+
+  // Try wallet-based reconciliation first (most reliable & unique)
+  for (const walletAddress of extractWalletAddresses(privyProfile)) {
+    const existing = await prisma.user.findFirst({
+      where: {
+        walletAddress,
+        isActor: false,
+      },
+      select: {
+        id: true,
+        walletAddress: true,
+      },
+    });
+
+    if (existing && (await attachPrivyId(existing.id, privyUserId))) {
+      logger.info(
+        'Re-linked user to updated Privy app via wallet',
+        { userId: existing.id, walletAddress, privyUserId },
+        'authenticate'
+      );
+      return existing;
+    }
+  }
+
+  // Fall back to email matches when wallets are unavailable
+  for (const email of extractEmailCandidates(privyProfile)) {
+    const existing = await prisma.user.findFirst({
+      where: {
+        isActor: false,
+        email: {
+          equals: email,
+          mode: 'insensitive',
+        },
+      },
+      select: {
+        id: true,
+        walletAddress: true,
+      },
+    });
+
+    if (existing && (await attachPrivyId(existing.id, privyUserId))) {
+      logger.info(
+        'Re-linked user to updated Privy app via email',
+        { userId: existing.id, email, privyUserId },
+        'authenticate'
+      );
+      return existing;
+    }
+  }
+
+  return null;
+}
+
+async function attachPrivyId(userId: string, privyUserId: string): Promise<boolean> {
+  try {
+    await prisma.user.update({
+      where: { id: userId },
+      data: { privyId: privyUserId },
+    });
+    return true;
+  } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2002'
+    ) {
+      logger.warn(
+        'Unable to attach new privyId because it already exists on another record',
+        { userId, privyUserId },
+        'authenticate'
+      );
+      return false;
+    }
+
+    throw error;
+  }
+}
+
+function extractWalletAddresses(privyUser: PrivyUser): string[] {
+  const addresses = new Set<string>();
+  const push = (value?: string | null) => {
+    if (value) {
+      addresses.add(value.toLowerCase());
+    }
+  };
+
+  push(privyUser.wallet?.address);
+  push(privyUser.smartWallet?.address);
+
+  for (const account of privyUser.linkedAccounts ?? []) {
+    if (
+      account &&
+      typeof account === 'object' &&
+      'type' in account &&
+      (account.type === 'wallet' || account.type === 'smart_wallet') &&
+      'address' in account &&
+      typeof account.address === 'string'
+    ) {
+      push(account.address);
+    }
+  }
+
+  return Array.from(addresses);
+}
+
+function extractEmailCandidates(privyUser: PrivyUser): string[] {
+  const emails = new Set<string>();
+  const push = (value?: string | null) => {
+    if (value) {
+      emails.add(value.trim().toLowerCase());
+    }
+  };
+
+  push(privyUser.email?.address);
+  push(privyUser.apple?.email);
+  push(privyUser.google?.email);
+  push(privyUser.linkedin?.email);
+  push(privyUser.discord?.email ?? undefined);
+  push(privyUser.github?.email ?? undefined);
+
+  for (const account of privyUser.linkedAccounts ?? []) {
+    if (
+      account &&
+      typeof account === 'object' &&
+      'type' in account &&
+      'email' in account &&
+      typeof account.email === 'string'
+    ) {
+      push(account.email);
+    }
+
+    if (
+      account &&
+      typeof account === 'object' &&
+      account.type === 'email' &&
+      'address' in account &&
+      typeof account.address === 'string'
+    ) {
+      push(account.address);
+    }
+  }
+
+  return Array.from(emails);
 }
 
 /**
