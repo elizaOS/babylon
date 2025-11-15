@@ -41,31 +41,41 @@ export function ShareVerificationModal({
       headers['Authorization'] = `Bearer ${token}`
     }
 
-    const response = await fetch(`/api/users/${encodeURIComponent(userId)}/verify-share`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        shareId,
-        platform,
-        postUrl: postUrl.trim(),
-      }),
-    })
+    try {
+      const response = await fetch(`/api/users/${encodeURIComponent(userId)}/verify-share`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          shareId,
+          platform,
+          postUrl: postUrl.trim(),
+        }),
+      })
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ error: 'Failed to verify share' }))
+      const data = await response.json()
+
+      if (!response.ok) {
+        toast.error(data.message || data.error || 'Failed to verify share')
+        setVerifying(false)
+        return
+      }
+
+      if (data.verified) {
+        const pointsMessage = data.points?.awarded > 0 
+          ? `Share verified! You earned ${data.points.awarded} points.` 
+          : 'Share verified! Thank you for sharing!'
+        toast.success(pointsMessage)
+        onClose()
+        // Reload the page to update points display
+        window.location.reload()
+      } else {
+        toast.error(data.message || 'Could not verify your post. Please check the URL.')
+      }
+    } catch (error) {
+      toast.error(`An error occurred while verifying. Please try again. ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
       setVerifying(false)
-      throw new Error(error.error || 'Failed to verify share')
     }
-
-    const data = await response.json()
-
-    if (data.verified) {
-      toast.success('Share verified! Thank you for sharing!')
-      onClose()
-    } else {
-      toast.error(data.message || 'Could not verify your post. Please check the URL.')
-    }
-    setVerifying(false)
   }
 
   const platformName = platform === 'twitter' ? 'X' : 'Farcaster'
@@ -89,13 +99,24 @@ export function ShareVerificationModal({
 
         {/* Content */}
         <div className="p-6 space-y-4">
+          {/* Points Reward Banner */}
+          <div className="p-4 rounded-lg bg-gradient-to-r from-primary/20 to-primary/10 border border-primary/30">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-2xl">🎁</span>
+              <h3 className="font-bold text-foreground">Earn 1,000 Points</h3>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Verify your {platformName} post to earn your reward!
+            </p>
+          </div>
+
           <div>
             <p className="text-sm text-muted-foreground mb-4">
-              Help us verify that you shared to {platformName}! Paste the URL to your post below.
+              Paste the URL to your {platformName} post below to verify and earn points.
             </p>
             
             <label htmlFor="postUrl" className="block text-sm font-medium mb-2">
-              Post URL
+              Post URL <span className="text-red-500">*</span>
             </label>
             <input
               id="postUrl"
@@ -106,14 +127,15 @@ export function ShareVerificationModal({
                 if (e.key === 'Enter') handleVerify()
               }}
               placeholder={placeholderUrl}
-              className="w-full px-4 py-2 rounded-lg bg-sidebar-accent/50 focus:outline-none focus:border-border"
+              className="w-full px-4 py-2 rounded-lg bg-sidebar-accent/50 focus:outline-none focus:border-border border border-border/50"
               disabled={verifying}
+              required
             />
           </div>
 
-          <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
+          <div className="p-3 rounded-lg bg-muted/50 border border-border/50">
             <p className="text-xs text-muted-foreground">
-              <strong>Tip:</strong> After posting, copy the URL from your browser&apos;s address bar or use the &quot;Copy link&quot; option on your post.
+              <strong>How to get the URL:</strong> After posting, copy the URL from your browser&apos;s address bar or use the &quot;Copy link&quot; option on your post.
             </p>
           </div>
 
@@ -122,7 +144,7 @@ export function ShareVerificationModal({
               onClick={handleVerify}
               disabled={verifying || !postUrl.trim()}
               className={cn(
-                'flex-1 px-4 py-2 rounded-lg font-semibold transition-colors',
+                'flex-1 px-4 py-3 rounded-lg font-semibold transition-colors',
                 'bg-primary text-primary-foreground hover:bg-primary/90',
                 'disabled:opacity-50 disabled:cursor-not-allowed',
                 'flex items-center justify-center gap-2'
@@ -130,12 +152,13 @@ export function ShareVerificationModal({
             >
               {verifying ? (
                 <>
+                  <span className="animate-spin">⏳</span>
                   <span>Verifying...</span>
                 </>
               ) : (
                 <>
                   <Check className="w-4 h-4" />
-                  <span>Verify</span>
+                  <span>Verify & Earn Points</span>
                 </>
               )}
             </button>
@@ -143,11 +166,15 @@ export function ShareVerificationModal({
             <button
               onClick={onClose}
               disabled={verifying}
-              className="px-4 py-2 rounded-lg bg-muted hover:bg-muted/70 font-semibold transition-colors"
+              className="px-4 py-3 rounded-lg bg-muted hover:bg-muted/70 font-semibold transition-colors text-sm"
             >
               Skip
             </button>
           </div>
+
+          <p className="text-xs text-center text-muted-foreground">
+            ⚠️ You must verify to earn points. Skipping means no reward.
+          </p>
         </div>
       </div>
     </div>
