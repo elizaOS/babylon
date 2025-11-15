@@ -742,7 +742,7 @@ Trending system not initialized yet.
     mediaEntities: (Organization | Actor)[],
     worldEvent: WorldEvent,
     allActors: Actor[],
-    _outcome: boolean
+    outcome: boolean
   ): Promise<Array<{ post: string; sentiment: number; clueStrength: number; pointsToward: boolean | null }>> {
     if (!this.llm || mediaEntities.length === 0) {
       return [];
@@ -755,12 +755,17 @@ Trending system not initialized yet.
       ? `Sources close to ${potentialSource.name} leaked information.`
       : '';
 
-    // Frame based on event hint, not global outcome
-    const outcomeFrame = worldEvent.pointsToward === 'YES'
+    // Frame based on event hint, enhanced with outcome knowledge for subtle guidance
+    const baseFrame = worldEvent.pointsToward === 'YES'
       ? 'Frame with positive spin on this development'
       : worldEvent.pointsToward === 'NO'
         ? 'Emphasize problems and concerns'
         : 'Report objectively - implications unclear';
+    
+    // Use outcome to add subtle directional guidance without being explicit
+    const outcomeFrame = outcome
+      ? `${baseFrame}. The underlying trend suggests positive momentum, but report objectively without stating conclusions.`
+      : `${baseFrame}. The underlying trend suggests challenges ahead, but report objectively without stating conclusions.`;
 
     const mediaList = mediaEntities.map((entity, i) => {
       const isOrg = 'type' in entity && entity.type === 'media';
@@ -908,7 +913,7 @@ Trending system not initialized yet.
   private async generateReactionsBatch(
     actors: Actor[],
     worldEvent: WorldEvent,
-    _outcome: boolean
+    outcome: boolean
   ): Promise<Array<{ post: string; sentiment: number; clueStrength: number; pointsToward: boolean | null }>> {
     if (!this.llm || actors.length === 0) {
       return [];
@@ -926,10 +931,17 @@ Trending system not initialized yet.
       };
     });
 
-    // Use ONLY event's explicit hint - no global outcome knowledge
-    const eventContext = worldEvent.pointsToward
+    // Use event's explicit hint, enhanced with outcome knowledge for subtle guidance
+    const baseEventContext = worldEvent.pointsToward
       ? `This development suggests things are trending toward ${worldEvent.pointsToward}.`
       : `The implications of this development are uncertain. React based on your own perspective and biases.`;
+    
+    // Add subtle outcome-based context without being explicit
+    const outcomeContext = outcome
+      ? ' The broader context suggests positive momentum, but react based on your own analysis and biases.'
+      : ' The broader context suggests challenges ahead, but react based on your own analysis and biases.';
+    
+    const eventContext = baseEventContext + outcomeContext;
 
     const actorsList = actorContexts.map((ctx, i) => {
       const persona = this._npcPersonas.get(ctx.actor.id);
@@ -1426,6 +1438,18 @@ Trending system not initialized yet.
     }
 
     const isCrisis = event.type === 'scandal' || event.type === 'leak';
+    
+    // Companies ALWAYS try to frame things positively for themselves
+    const frameGuidance = event.pointsToward === 'NO'
+      ? 'Defensively spin this as minor/temporary - protect company reputation'
+      : event.pointsToward === 'YES'
+        ? 'Promote this as evidence of company strength and success'
+        : 'Frame neutrally but emphasize company stability and commitment';
+    
+    // Enhance frameGuidance with outcome knowledge for more strategic framing
+    const enhancedFrameGuidance = outcome
+      ? `${frameGuidance}. The underlying trend supports positive framing - emphasize long-term value and resilience.`
+      : `${frameGuidance}. The underlying trend requires careful management - emphasize proactive response and commitment to stakeholders.`;
 
     // Ensure world context is available
     if (!this.worldContext) {
@@ -1438,9 +1462,7 @@ Trending system not initialized yet.
       eventDescription: event.description,
       eventType: event.type,
       postType: isCrisis ? 'crisis management' : 'announcement',
-      outcomeFrame: outcome 
-        ? 'Frame as ultimately positive for the company' 
-        : 'Manage the negative optics professionally',
+      outcomeFrame: enhancedFrameGuidance,
       ...(this.worldContext || {})
     });
 
@@ -1776,7 +1798,7 @@ Trending system not initialized yet.
    * Generates ambient posts WITHOUT knowing predetermined outcome.
    * Actors post general thoughts based on their mood and context.
    */
-  private async generateAmbientFeed(day: number, allActors: Actor[], _outcome: boolean): Promise<FeedPost[]> {
+  private async generateAmbientFeed(day: number, allActors: Actor[], outcome: boolean): Promise<FeedPost[]> {
     const ambient: FeedPost[] = [];
     const baseTime = `2025-10-${String(day).padStart(2, '0')}T`;
 
@@ -1791,7 +1813,7 @@ Trending system not initialized yet.
       if (actorsThisHour.length === 0) continue;
 
       // ✅ BATCH: Generate all ambient posts for this hour in ONE call
-      const posts = await this.generateAmbientPostsBatch(actorsThisHour, day);
+      const posts = await this.generateAmbientPostsBatch(actorsThisHour, day, outcome);
       
       posts.forEach((post, i) => {
         const actor = actorsThisHour[i];
@@ -1921,10 +1943,12 @@ Trending system not initialized yet.
    * @description
    * Generates ambient posts WITHOUT knowing predetermined outcome.
    * Actors post general thoughts based on their mood, relationships, and trending topics.
+   * Outcome parameter provides subtle directional guidance for atmosphere.
    */
   private async generateAmbientPostsBatch(
     actors: Actor[],
-    day: number
+    day: number,
+    outcome: boolean
   ): Promise<Array<{ post: string; sentiment: number; clueStrength: number; pointsToward: boolean | null }>> {
     if (!this.llm || actors.length === 0) {
       return [];
@@ -1949,12 +1973,19 @@ Trending system not initialized yet.
         ? 'Mid-way through - developments are unfolding.'
         : 'Late stage - tension is building, things are heating up.';
 
-    // General atmosphere based on phase, not predetermined outcome
-    const atmosphereContext = day <= 10
+    // General atmosphere based on phase, enhanced with outcome knowledge for subtle guidance
+    const baseAtmosphere = day <= 10
       ? 'General activity and routine developments.'
       : day <= 20
         ? 'Increasing activity and developments in various areas.'
         : 'Heightened activity as events accelerate.';
+    
+    // Add subtle outcome-based atmosphere without being explicit
+    const outcomeAtmosphere = outcome
+      ? ' The overall momentum feels positive, though individual perspectives vary.'
+      : ' The overall momentum feels challenging, though individual perspectives vary.';
+    
+    const atmosphereContext = baseAtmosphere + outcomeAtmosphere;
 
     const actorsList = contexts.map((ctx, i) => {
       const persona = this._npcPersonas.get(ctx.actor.id);
