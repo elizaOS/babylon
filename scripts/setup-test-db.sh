@@ -45,6 +45,14 @@ AND tablename IN ('User', 'Post', 'Comment', 'Actor', 'Pool', 'Question')
 ORDER BY tablename;
 EOF
 
+# List ALL tables to debug what's being created
+echo "📋 Listing all tables created:"
+bunx prisma db execute --url="$DATABASE_URL" --stdin <<EOF
+SELECT tablename FROM pg_tables
+WHERE schemaname = 'public'
+ORDER BY tablename;
+EOF
+
 # Count tables to ensure migration succeeded
 TABLE_COUNT=$(bunx prisma db execute --url="$DATABASE_URL" --stdin <<< "SELECT COUNT(*) FROM pg_tables WHERE schemaname = 'public';" | grep -oE '[0-9]+' | tail -1)
 echo "✅ Found $TABLE_COUNT tables in database"
