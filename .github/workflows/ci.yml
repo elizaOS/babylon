@@ -23,7 +23,7 @@ env:
 # Cache (automatic optimizations):
 # - 4x faster cache downloads (colocated in same datacenter)
 # - Existing actions/cache@v4 automatically accelerated (node_modules, .next)
-# - Docker pull cache for postgres:15 service images (automatic)
+# - Docker pull cache for postgres:16 service images (automatic)
 # - 25GB free cache storage per repo/week (2.5x GitHub's 10GB limit)
 # 
 # Artifact strategy:
@@ -42,7 +42,7 @@ jobs:
     
     services:
       postgres:
-        image: postgres:15
+        image: postgres:16-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
