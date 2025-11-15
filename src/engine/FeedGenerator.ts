@@ -1508,7 +1508,7 @@ Trending system not initialized yet.
   private async generateGovernmentPost(
     govt: Organization,
     event: WorldEvent,
-    _allActors: Actor[],
+    allActors: Actor[],
     outcome: boolean
   ): Promise<{ post: string; sentiment: number; clueStrength: number; pointsToward: boolean | null }> {
     if (!this.llm) {
@@ -1520,12 +1520,39 @@ Trending system not initialized yet.
       this.worldContext = await generateWorldContext({ maxActors: 50 });
     }
 
+    // Identify actors and organizations involved in the event
+    const involvedActors = event.actors
+      .map(id => allActors.find(a => a.id === id))
+      .filter((a): a is Actor => a !== undefined);
+    
+    // Find companies/organizations involved through actor affiliations
+    const involvedCompanies = involvedActors
+      .flatMap(actor => actor.affiliations || [])
+      .map(orgId => this.organizations.find(o => o.id === orgId))
+      .filter((o): o is Organization => o !== undefined && o.type === 'company')
+      .slice(0, 3); // Limit to top 3 companies
+
+    // Build context about who the government is responding to
+    const involvedParties = [
+      ...involvedActors.map(a => a.name),
+      ...involvedCompanies.map(c => c.name)
+    ].filter(Boolean);
+
+    const partiesContext = involvedParties.length > 0
+      ? `This event involves: ${involvedParties.join(', ')}. Address these parties in your statement.`
+      : 'Address the event and any relevant parties mentioned in the event description.';
+
     // Government framing based on event severity and outcome
-    const outcomeFrame = event.type === 'scandal' || event.type === 'revelation'
+    const baseFrame = event.type === 'scandal' || event.type === 'revelation'
       ? 'Announce investigation, issue vague statement about "reviewing the matter"'
-      : outcome
-        ? 'Frame as having things under control'
-        : 'Show typical government ineffectiveness';
+      : 'Issue official statement addressing the development';
+    
+    // Enhance with outcome knowledge for subtle guidance
+    const enhancedFrame = outcome
+      ? `${baseFrame}. The underlying situation suggests manageable resolution, but maintain bureaucratic caution.`
+      : `${baseFrame}. The underlying situation requires careful oversight, but maintain bureaucratic caution.`;
+
+    const outcomeFrame = `${enhancedFrame} ${partiesContext}`;
 
     const prompt = renderPrompt(governmentPost, {
       govName: govt.name,
