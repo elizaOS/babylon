@@ -84,23 +84,8 @@ jobs:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
           DIRECT_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
         run: |
-          # Generate Prisma client first
-          echo "🔧 Generating Prisma client..."
-          bunx prisma generate 2>&1 | sed -E 's/(Datasource|ep-soft-wildflower|neondb|@[^[:space:]]*\.neon\.tech)/[REDACTED]/g'
-
-          # Force reset and apply migrations
-          echo "🗄️ Resetting database and applying migrations..."
-          bunx prisma migrate reset --force --skip-generate --skip-seed 2>&1 | sed -E 's/(Datasource|ep-soft-wildflower|neondb|@[^[:space:]]*\.neon\.tech)/[REDACTED]/g'
-
-          # Verify tables exist
-          echo "🔍 Verifying database tables..."
-          bunx prisma db execute --stdin <<< 'SELECT tablename FROM pg_tables WHERE schemaname = '\''public'\'' LIMIT 5;' 2>&1 | sed -E 's/(Datasource|ep-soft-wildflower|neondb|@[^[:space:]]*\.neon\.tech)/[REDACTED]/g' || true
-
-          # Run seed to ensure test data is loaded
-          echo "🌱 Seeding database..."
-          bunx prisma db seed 2>&1 | sed -E 's/(Datasource|ep-soft-wildflower|neondb|@[^[:space:]]*\.neon\.tech)/[REDACTED]/g'
-
-          echo "✅ Database setup complete"
+          # Use the setup script for consistent database initialization
+          bash scripts/setup-test-db.sh 2>&1 | sed -E 's/(Datasource|ep-soft-wildflower|neondb|@[^[:space:]]*\.neon\.tech)/[REDACTED]/g'
 
       - name: Build for tests
         env:
